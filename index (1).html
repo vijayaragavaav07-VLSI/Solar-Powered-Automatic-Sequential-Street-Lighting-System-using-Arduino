@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Solar Powered Automatic Street Lighting System — Arduino Uno R3</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050a14;--accent:#00e5ff;--accent2:#39ff14;--accent3:#ff6b35;
+  --solar:#ffd700;--led:#00ff88;--battery:#7ec8e3;--arduino:#00979d;
+  --ldr:#c084fc;--wire:#f97316;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:#e0f0ff;font-family:'JetBrains Mono',monospace;min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px;background:#0a1428}
+::-webkit-scrollbar-thumb{background:#00e5ff44;border-radius:3px}
+
+/* Glass panels */
+.glass{
+  background:rgba(10,20,40,0.78);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(0,229,255,0.15);
+  border-radius:12px;
+}
+
+/* Animations */
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:.9}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-22px)}}
+@keyframes scanline{0%{top:0}100%{top:100%}}
+@keyframes glow-pulse{0%,100%{box-shadow:0 0 8px var(--led),0 0 20px #00ff8855}50%{box-shadow:0 0 18px var(--led),0 0 45px #00ff8888}}
+@keyframes charge-flash{0%,100%{opacity:.15}50%{opacity:.55}}
+@keyframes particle-rise{0%{transform:translateY(0);opacity:.8}100%{transform:translateY(-40px);opacity:0}}
+@keyframes slide-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin-slow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes photon{0%{cy:22}50%{opacity:1}100%{cy:2;opacity:0}}
+@keyframes current-flow{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
+@keyframes bat-glow{0%,100%{filter:drop-shadow(0 0 3px #39ff14)}50%{filter:drop-shadow(0 0 10px #39ff14)}}
+
+/* Particles canvas */
+#particles-bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+/* Header */
+header{
+  position:sticky;top:0;z-index:100;
+  background:rgba(5,10,20,.93);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid rgba(0,229,255,.14);
+  padding:12px 24px;
+}
+.header-inner{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.brand h1{font-family:'Orbitron',monospace;font-size:clamp(13px,2.2vw,20px);color:var(--accent);letter-spacing:.1em;text-shadow:0 0 20px #00e5ff88}
+.brand p{font-size:9px;color:#4a7a9b;letter-spacing:.2em;margin-top:2px}
+.badges{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;transition:all .4s}
+#badge-mode{background:rgba(255,215,0,.12);border:1px solid #ffd70044;color:var(--solar)}
+#badge-ldr{background:rgba(0,229,255,.1);border:1px solid #00e5ff33;color:var(--accent)}
+#badge-bat{background:rgba(57,255,20,.1);border:1px solid #39ff1433;color:var(--accent2)}
+
+/* Main layout */
+main{max-width:1400px;margin:0 auto;padding:24px 20px;position:relative;z-index:1}
+
+/* Control Panel */
+.control-grid{display:grid;grid-template-columns:1fr auto;gap:20px;margin-bottom:24px;align-items:start}
+@media(max-width:700px){.control-grid{grid-template-columns:1fr}}
+.control-panel{padding:24px}
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.panel-title{font-family:'Orbitron',monospace;font-size:15px;color:var(--accent)}
+
+/* Toggle button */
+#toggle-btn{
+  padding:10px 24px;border-radius:8px;border:none;cursor:pointer;
+  font-family:'Orbitron',monospace;font-weight:700;font-size:12px;letter-spacing:.1em;
+  transition:all .4s;
+}
+.day-btn{background:linear-gradient(135deg,#3a2000,#8a5a00);color:var(--solar);border:1px solid #ffd70055;box-shadow:0 0 20px #ffd70044}
+.night-btn{background:linear-gradient(135deg,#1a0a3a,#4a1a8a);color:var(--ldr);border:1px solid #c084fc55;box-shadow:0 0 20px #c084fc44}
+
+/* Slider */
+.slider-wrap{margin-bottom:16px}
+.slider-label{display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px;color:#4a7a9b}
+#intensity-val{font-weight:600;transition:color .4s}
+input[type=range]{width:100%;height:6px;border-radius:3px;outline:none;cursor:pointer;-webkit-appearance:none;transition:background .3s}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;cursor:pointer;transition:background .3s}
+.slider-ends{display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:#2a4a6a}
+
+/* Stats row */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.stat-card{padding:10px 12px;border-radius:8px;background:rgba(0,0,0,.3);text-align:center;transition:border .4s}
+.stat-icon{font-size:18px;margin-bottom:4px}
+.stat-val{font-size:14px;font-weight:700;transition:color .4s}
+.stat-label{font-size:9px;color:#4a7a9b;letter-spacing:.1em}
+
+/* LED side panel */
+.led-panel{padding:20px;min-width:160px}
+.led-panel h3{font-family:'Orbitron',monospace;font-size:11px;color:var(--accent);margin-bottom:16px;letter-spacing:.1em}
+.led-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.led-dot{width:20px;height:20px;border-radius:50%;border:2px solid #2a4a2a;background:#1a2a1a;transition:all .5s;flex-shrink:0}
+.led-dot.on{background:var(--led);border-color:var(--led);animation:glow-pulse 1.2s ease-in-out infinite}
+.led-info .led-pin{font-size:11px;font-weight:600;transition:color .4s}
+.led-info .led-ma{font-size:9px;color:#4a7a9b}
+.led-total-label{font-size:9px;color:#4a7a9b;margin-bottom:4px}
+.led-total{font-size:18px;font-weight:700;font-family:'Orbitron',monospace;transition:color .4s;border-top:1px solid rgba(0,229,255,.1);padding-top:12px}
+
+/* Circuit section */
+.circuit-section{padding:24px;margin-bottom:24px;position:relative;overflow:hidden}
+.circuit-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.circuit-title{font-family:'Orbitron',monospace;font-size:15px;color:var(--accent)}
+.legend{display:flex;gap:8px;flex-wrap:wrap}
+.leg-item{font-size:10px;padding:3px 10px;border-radius:12px}
+.circuit-ambient{position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:1;transition:background 1.5s}
+#circuit-svg-wrap{height:clamp(280px,52vw,500px);position:relative;z-index:2}
+#circuit-svg{width:100%;height:100%;filter:drop-shadow(0 0 24px #00e5ff33)}
+
+/* Status bar */
+.status-bar{margin-top:16px;padding:12px 20px;border-radius:8px;display:flex;align-items:center;gap:12px;transition:all .4s}
+.status-icon{font-size:20px}
+.status-title{font-weight:700;font-size:13px;font-family:'Orbitron',monospace;transition:color .4s}
+.status-desc{font-size:11px;color:#4a7a9b;margin-top:2px}
+
+/* Charts row */
+.charts-row{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:24px}
+@media(max-width:600px){.charts-row{grid-template-columns:1fr}}
+.chart-panel{padding:20px}
+.chart-panel h3{font-family:'Orbitron',monospace;font-size:13px;color:var(--accent);margin-bottom:16px}
+#bat-bars{display:flex;align-items:flex-end;gap:2px;height:64px;width:100%}
+.bar{flex:1;border-radius:2px 2px 0 0;transition:height .5s ease,background .5s ease,opacity .5s ease;min-height:4px}
+.bat-ends{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#4a7a9b}
+.bat-status{margin-top:6px;font-size:10px;color:#4a7a9b}
+
+/* LDR gauge */
+.ldr-panel{padding:20px}
+.ldr-panel h3{font-family:'Orbitron',monospace;font-size:13px;color:var(--ldr);margin-bottom:16px}
+.gauge-wrap{position:relative;max-width:140px;margin:0 auto;aspect-ratio:1}
+.gauge-wrap svg{width:100%;height:100%}
+#ldr-arc{transition:stroke-dasharray .5s ease,stroke .5s ease}
+.ldr-status-text{margin-top:12px;text-align:center}
+.ldr-mode{font-size:11px;font-weight:700;transition:color .4s}
+.ldr-hint{font-size:9px;color:#4a7a9b;margin-top:4px}
+
+/* Sections */
+.sections-panel{padding:20px;margin-bottom:24px}
+.tabs{display:flex;gap:8px;margin-bottom:24px;overflow-x:auto;padding-bottom:4px}
+.tab-btn{
+  padding:8px 16px;border-radius:8px;border:none;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;
+  background:rgba(0,0,0,.3);color:#4a7a9b;
+  border:1px solid rgba(0,229,255,.08);transition:all .3s;
+}
+.tab-btn.active{
+  background:linear-gradient(135deg,rgba(0,229,255,.18),rgba(0,229,255,.04));
+  color:var(--accent);border-color:#00e5ff55;box-shadow:0 0 12px #00e5ff33;
+}
+.tab-content{display:none;animation:slide-in .3s ease}
+.tab-content.active{display:block}
+.section-title{font-family:'Orbitron',monospace;font-size:15px;color:var(--accent);margin-bottom:20px}
+.section-text{line-height:1.8;color:#8ab4d0;font-size:14px;max-width:700px}
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.comp-card{padding:12px 16px;border-radius:8px;background:rgba(0,0,0,.3)}
+.comp-name{font-weight:700;font-size:13px;margin-bottom:4px}
+.comp-spec{font-size:11px;color:#4a7a9b}
+.steps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.step-card{padding:20px;border-radius:10px;background:rgba(0,229,255,.04);border:1px solid rgba(0,229,255,.1)}
+.step-icon{font-size:28px;margin-bottom:8px}
+.step-title{color:var(--accent);font-weight:700;margin-bottom:8px;font-size:14px;font-family:'Orbitron',monospace}
+.step-desc{color:#6a9ab0;font-size:12px;line-height:1.7}
+.points-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.point-item{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:8px;background:rgba(0,0,0,.2);border:1px solid rgba(0,229,255,.08)}
+.point-arrow{color:var(--accent2);flex-shrink:0}
+.point-text{color:#8ab4d0;font-size:13px;line-height:1.6}
+
+/* Wiring table */
+.table-panel{padding:20px;margin-bottom:24px}
+.table-panel h2{font-family:'Orbitron',monospace;font-size:14px;color:var(--accent);margin-bottom:16px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:8px 16px;text-align:left;color:#4a7a9b;letter-spacing:.1em;font-size:10px;border-bottom:1px solid rgba(0,229,255,.2)}
+td{padding:10px 16px;border-bottom:1px solid rgba(0,229,255,.06);transition:background .2s}
+tr:hover td{background:rgba(0,229,255,.04)}
+.wire-badge{padding:2px 10px;border-radius:12px;font-size:10px}
+
+/* Footer */
+footer{text-align:center;padding:20px 0;color:#2a4a6a;font-size:11px;letter-spacing:.15em}
+
+/* Ambient bg gradient */
+#ambient-bg{position:fixed;inset:0;z-index:0;transition:background 1.5s ease;pointer-events:none}
+</style>
+</head>
+<body>
+
+<!-- Ambient background -->
+<div id="ambient-bg"></div>
+<canvas id="particles-bg"></canvas>
+
+<!-- ══ HEADER ══ -->
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <h1>⚡ SOLAR STREET LIGHT SYS</h1>
+      <p>ARDUINO UNO R3 · SMART AUTOMATION · v2.4.1</p>
+    </div>
+    <div class="badges">
+      <span class="badge" id="badge-mode">☀️ DAY MODE</span>
+      <span class="badge" id="badge-ldr">LDR: 320Ω</span>
+      <span class="badge" id="badge-bat">BAT: 78%</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══ CONTROL PANEL ══ -->
+  <div class="control-grid">
+    <div class="glass control-panel">
+      <div class="panel-header">
+        <span class="panel-title">ENVIRONMENTAL CONTROL</span>
+        <button id="toggle-btn" class="day-btn">🌙 SWITCH TO NIGHT</button>
+      </div>
+
+      <div class="slider-wrap">
+        <div class="slider-label">
+          <span style="color:#4a7a9b">LIGHT INTENSITY</span>
+          <span id="intensity-val" style="color:var(--solar);font-weight:600">75% — BRIGHT</span>
+        </div>
+        <input type="range" id="intensity" min="0" max="100" value="75"/>
+        <div class="slider-ends"><span>🌙 DARK</span><span>☀️ BRIGHT</span></div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card" id="stat-solar" style="border:1px solid #ffd70022">
+          <div class="stat-icon">☀️</div>
+          <div class="stat-val" id="solar-val" style="color:var(--solar)">5.8W</div>
+          <div class="stat-label">SOLAR INPUT</div>
+        </div>
+        <div class="stat-card" id="stat-led" style="border:1px solid #1a4a1a22">
+          <div class="stat-icon">💡</div>
+          <div class="stat-val" id="led-status-val" style="color:#2a4a2a">STANDBY</div>
+          <div class="stat-label">LED STATUS</div>
+        </div>
+        <div class="stat-card" style="border:1px solid #00e5ff22">
+          <div class="stat-icon">⚡</div>
+          <div class="stat-val" id="eff-val" style="color:var(--accent)">99%</div>
+          <div class="stat-label">EFFICIENCY</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LED side panel -->
+    <div class="glass led-panel">
+      <h3>LED ARRAY</h3>
+      <div class="led-row"><div class="led-dot" id="led5"></div><div class="led-info"><div class="led-pin" id="pin5" style="color:#2a4a2a">D5</div><div class="led-ma" id="ma5">0mA</div></div></div>
+      <div class="led-row"><div class="led-dot" id="led6"></div><div class="led-info"><div class="led-pin" id="pin6" style="color:#2a4a2a">D6</div><div class="led-ma" id="ma6">0mA</div></div></div>
+      <div class="led-row"><div class="led-dot" id="led7"></div><div class="led-info"><div class="led-pin" id="pin7" style="color:#2a4a2a">D7</div><div class="led-ma" id="ma7">0mA</div></div></div>
+      <div class="led-total-label">TOTAL DRAW</div>
+      <div class="led-total" id="total-draw" style="color:#2a4a2a">0mA</div>
+    </div>
+  </div>
+
+  <!-- ══ CIRCUIT DIAGRAM ══ -->
+  <div class="glass circuit-section">
+    <div class="circuit-header">
+      <span class="circuit-title">◈ INTERACTIVE CIRCUIT DIAGRAM</span>
+      <div class="legend">
+        <span class="leg-item" style="background:#ffd70018;border:1px solid #ffd70044;color:var(--solar)">Solar</span>
+        <span class="leg-item" style="background:#7ec8e318;border:1px solid #7ec8e344;color:var(--battery)">Battery</span>
+        <span class="leg-item" style="background:#00979d18;border:1px solid #00979d44;color:var(--arduino)">Arduino</span>
+        <span class="leg-item" style="background:#c084fc18;border:1px solid #c084fc44;color:var(--ldr)">LDR</span>
+        <span class="leg-item" style="background:#00ff8818;border:1px solid #00ff8844;color:var(--led)">LED</span>
+      </div>
+    </div>
+    <div class="circuit-ambient" id="circuit-ambient"></div>
+    <div id="circuit-svg-wrap">
+      <svg id="circuit-svg" viewBox="0 0 680 520" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(0,229,255,0.07)" stroke-width="0.5"/>
+          </pattern>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="ledglow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff7aa"/>
+            <stop offset="60%" stop-color="#ffd700"/>
+            <stop offset="100%" stop-color="#ff8c00" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="moonGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#e0f0ff"/>
+            <stop offset="100%" stop-color="#0a1a30" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="solarGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1a3a6a"/>
+            <stop offset="50%" stop-color="#2a5a9a"/>
+            <stop offset="100%" stop-color="#0a2040"/>
+          </linearGradient>
+          <linearGradient id="battFill" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#39ff14"/>
+            <stop offset="60%" stop-color="#ffd700"/>
+            <stop offset="100%" stop-color="#ff4444"/>
+          </linearGradient>
+        </defs>
+
+        <!-- BG -->
+        <rect width="680" height="520" fill="#060e1e"/>
+        <rect width="680" height="520" fill="url(#grid)"/>
+
+        <!-- Sky (sun/moon swapped via JS) -->
+        <ellipse id="sky-orb" cx="120" cy="55" rx="55" ry="55" fill="url(#sunGrad)" opacity="0.6"/>
+
+        <!-- Title -->
+        <text x="340" y="20" fill="#00e5ff" font-size="12" text-anchor="middle" font-family="monospace" font-weight="bold" letter-spacing="2">SOLAR STREET LIGHT — CIRCUIT DIAGRAM</text>
+
+        <!-- WIRES -->
+        <!-- Solar → Battery -->
+        <path id="wire0" d="M 120 80 L 120 160 L 210 160" fill="none" stroke="#ffd700" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
+        <!-- Battery → Arduino -->
+        <path d="M 280 160 L 380 160 L 380 210" fill="none" stroke="#7ec8e3" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
+        <!-- Arduino → LEDs (changes with night) -->
+        <path id="wire2" d="M 380 260 L 380 320 L 510 320" fill="none" stroke="#1a2a1a" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
+        <!-- GND -->
+        <path d="M 380 500 L 120 500 L 120 160" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.45"/>
+        <text x="230" y="513" fill="#666" font-size="9" text-anchor="middle">GND</text>
+        <!-- LDR → A0 -->
+        <path d="M 500 180 L 430 180 L 430 230" fill="none" stroke="#c084fc" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>
+        <text x="465" y="172" fill="#c084fc" font-size="9" text-anchor="middle">A0</text>
+
+        <!-- Particle group -->
+        <g id="particle-layer"></g>
+
+        <!-- ── SOLAR PANEL ── -->
+        <g transform="translate(60,30)">
+          <rect x="0" y="0" width="120" height="75" rx="4" fill="url(#solarGrad)" stroke="#ffd700" stroke-width="1.5" id="solar-border"/>
+          <!-- cells row 0 -->
+          <rect x="3"  y="3"  width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="43" y="3"  width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="83" y="3"  width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <!-- row 1 -->
+          <rect x="3"  y="21" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="43" y="21" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="83" y="21" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <!-- row 2 -->
+          <rect x="3"  y="39" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="43" y="39" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="83" y="39" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <!-- row 3 -->
+          <rect x="3"  y="57" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="43" y="57" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <rect x="83" y="57" width="36" height="14" rx="2" fill="#1a4080" stroke="rgba(255,215,0,0.3)" stroke-width="0.5" class="solar-cell"/>
+          <!-- charge flash overlay -->
+          <rect id="solar-flash" x="0" y="0" width="120" height="75" rx="4" fill="rgba(255,215,0,0.1)" style="animation:charge-flash 1.5s ease-in-out infinite"/>
+          <text x="60" y="88"  fill="#ffd700" font-size="10" text-anchor="middle" font-family="monospace">SOLAR PANEL</text>
+          <text x="60" y="98" id="solar-status-svg" fill="#ffd700" font-size="8" text-anchor="middle" font-family="monospace">CHARGING ⚡</text>
+        </g>
+
+        <!-- ── BATTERY ── -->
+        <g transform="translate(200,130)">
+          <rect x="0" y="0" width="80" height="50" rx="6" fill="#0a1a2a" stroke="#7ec8e3" stroke-width="1.5"/>
+          <rect id="bat-fill-svg" x="5" y="5" width="63" height="40" rx="4" fill="#39ff14" opacity="0.85"/>
+          <rect x="80" y="17" width="8" height="16" rx="2" fill="#7ec8e3" opacity="0.8"/>
+          <text id="bat-pct-svg" x="40" y="28" fill="#fff" font-size="11" text-anchor="middle" font-family="monospace" font-weight="bold">78%</text>
+          <text x="40" y="60" fill="#7ec8e3" font-size="10" text-anchor="middle" font-family="monospace">BATTERY</text>
+        </g>
+
+        <!-- ── ARDUINO UNO R3 ── -->
+        <g transform="translate(310,185)">
+          <rect x="0" y="0" width="140" height="100" rx="5" fill="#0d2e30" stroke="#00979d" stroke-width="2"/>
+          <!-- Pins top -->
+          <rect x="10" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="30" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="50" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="70" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="90" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="110" y="-6" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <!-- Pins bottom -->
+          <rect x="10" y="95" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="30" y="95" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="50" y="95" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <rect x="70" y="95" width="8" height="12" rx="2" fill="#00979d" opacity="0.8"/>
+          <!-- USB -->
+          <rect x="0" y="35" width="12" height="22" rx="2" fill="#222" stroke="#555" stroke-width="1"/>
+          <!-- Chip -->
+          <rect x="50" y="30" width="44" height="36" rx="3" fill="#111" stroke="#333" stroke-width="1"/>
+          <text x="72" y="52" fill="#444" font-size="7" text-anchor="middle" font-family="monospace">ATMEGA328P</text>
+          <!-- Onboard LEDs -->
+          <circle id="ard-led-red"   cx="15" cy="20" r="4" fill="#330000"/>
+          <circle id="ard-led-green" cx="25" cy="20" r="4" fill="#003300"/>
+          <!-- Pin labels -->
+          <text x="14" y="-10" fill="#aaa" font-size="7" text-anchor="middle" font-family="monospace">5</text>
+          <text x="34" y="-10" fill="#aaa" font-size="7" text-anchor="middle" font-family="monospace">6</text>
+          <text x="54" y="-10" fill="#aaa" font-size="7" text-anchor="middle" font-family="monospace">7</text>
+          <text x="70" y="115" fill="#00979d" font-size="10" text-anchor="middle" font-family="monospace">ARDUINO UNO R3</text>
+        </g>
+
+        <!-- ── LDR SENSOR ── -->
+        <g transform="translate(475,155)">
+          <circle cx="25" cy="25" r="22" fill="#1a0a2a" stroke="#c084fc" stroke-width="1.5"/>
+          <path id="ldr-fill" d="M 15 25 Q 25 10 35 25 Q 25 40 15 25" fill="rgba(255,215,0,0.4)" stroke="#c084fc" stroke-width="1"/>
+          <line x1="10" y1="18" x2="40" y2="18" stroke="#c084fc" stroke-width="0.8" opacity="0.5"/>
+          <line x1="10" y1="32" x2="40" y2="32" stroke="#c084fc" stroke-width="0.8" opacity="0.5"/>
+          <!-- Photon arrows (day) -->
+          <g id="photon-arrows">
+            <line x1="12" y1="8" x2="12" y2="2" stroke="#ffd700" stroke-width="2" stroke-linecap="round"/>
+            <line x1="19" y1="8" x2="19" y2="2" stroke="#ffd700" stroke-width="2" stroke-linecap="round"/>
+            <line x1="26" y1="8" x2="26" y2="2" stroke="#ffd700" stroke-width="2" stroke-linecap="round"/>
+          </g>
+          <text x="25" y="55" fill="#c084fc" font-size="10" text-anchor="middle" font-family="monospace">LDR</text>
+          <text id="ldr-svg-val" x="25" y="66" fill="#ffd700" font-size="8" text-anchor="middle" font-family="monospace">320Ω</text>
+        </g>
+
+        <!-- ── LEDs ── -->
+        <!-- LED 1 (D5) -->
+        <g transform="translate(500,295)">
+          <circle id="led1-glow" cx="0" cy="0" r="22" fill="rgba(0,255,136,0)" />
+          <ellipse id="led1-body" cx="0" cy="0" rx="10" ry="14" fill="#1a2a1a" stroke="#2a3a2a" stroke-width="1.5"/>
+          <line x1="-4" y1="14" x2="-4" y2="30" stroke="#888" stroke-width="1.5"/>
+          <line x1="4"  y1="14" x2="8"  y2="30" stroke="#888" stroke-width="1.5"/>
+          <text x="0" y="42" fill="#444" font-size="9" text-anchor="middle" font-family="monospace" id="led1-label">D5</text>
+        </g>
+        <!-- LED 2 (D6) -->
+        <g transform="translate(550,295)">
+          <circle id="led2-glow" cx="0" cy="0" r="22" fill="rgba(0,255,136,0)"/>
+          <ellipse id="led2-body" cx="0" cy="0" rx="10" ry="14" fill="#1a2a1a" stroke="#2a3a2a" stroke-width="1.5"/>
+          <line x1="-4" y1="14" x2="-4" y2="30" stroke="#888" stroke-width="1.5"/>
+          <line x1="4"  y1="14" x2="8"  y2="30" stroke="#888" stroke-width="1.5"/>
+          <text x="0" y="42" fill="#444" font-size="9" text-anchor="middle" font-family="monospace" id="led2-label">D6</text>
+        </g>
+        <!-- LED 3 (D7) -->
+        <g transform="translate(600,295)">
+          <circle id="led3-glow" cx="0" cy="0" r="22" fill="rgba(0,255,136,0)"/>
+          <ellipse id="led3-body" cx="0" cy="0" rx="10" ry="14" fill="#1a2a1a" stroke="#2a3a2a" stroke-width="1.5"/>
+          <line x1="-4" y1="14" x2="-4" y2="30" stroke="#888" stroke-width="1.5"/>
+          <line x1="4"  y1="14" x2="8"  y2="30" stroke="#888" stroke-width="1.5"/>
+          <text x="0" y="42" fill="#444" font-size="9" text-anchor="middle" font-family="monospace" id="led3-label">D7</text>
+        </g>
+
+        <!-- ── BREADBOARD ── -->
+        <g transform="translate(420,375)">
+          <rect x="0" y="0" width="220" height="65" rx="4" fill="#f0ebe0" stroke="#ccc" stroke-width="1"/>
+          <!-- holes simplified grid -->
+          <g opacity="0.5" fill="#bbb">
+            <circle cx="10" cy="10" r="2"/><circle cx="20" cy="10" r="2"/><circle cx="30" cy="10" r="2"/><circle cx="40" cy="10" r="2"/><circle cx="50" cy="10" r="2"/>
+            <circle cx="60" cy="10" r="2"/><circle cx="70" cy="10" r="2"/><circle cx="80" cy="10" r="2"/><circle cx="90" cy="10" r="2"/><circle cx="100" cy="10" r="2"/>
+            <circle cx="110" cy="10" r="2"/><circle cx="120" cy="10" r="2"/><circle cx="130" cy="10" r="2"/><circle cx="140" cy="10" r="2"/><circle cx="150" cy="10" r="2"/>
+            <circle cx="160" cy="10" r="2"/><circle cx="170" cy="10" r="2"/><circle cx="180" cy="10" r="2"/><circle cx="190" cy="10" r="2"/><circle cx="200" cy="10" r="2"/>
+            <circle cx="10" cy="22" r="2"/><circle cx="20" cy="22" r="2"/><circle cx="30" cy="22" r="2"/><circle cx="40" cy="22" r="2"/><circle cx="50" cy="22" r="2"/>
+            <circle cx="60" cy="22" r="2"/><circle cx="70" cy="22" r="2"/><circle cx="80" cy="22" r="2"/><circle cx="90" cy="22" r="2"/><circle cx="100" cy="22" r="2"/>
+            <circle cx="110" cy="22" r="2"/><circle cx="120" cy="22" r="2"/><circle cx="130" cy="22" r="2"/><circle cx="140" cy="22" r="2"/><circle cx="150" cy="22" r="2"/>
+            <circle cx="160" cy="22" r="2"/><circle cx="170" cy="22" r="2"/><circle cx="180" cy="22" r="2"/><circle cx="190" cy="22" r="2"/><circle cx="200" cy="22" r="2"/>
+            <circle cx="10" cy="44" r="2"/><circle cx="20" cy="44" r="2"/><circle cx="30" cy="44" r="2"/><circle cx="40" cy="44" r="2"/><circle cx="50" cy="44" r="2"/>
+            <circle cx="60" cy="44" r="2"/><circle cx="70" cy="44" r="2"/><circle cx="80" cy="44" r="2"/><circle cx="90" cy="44" r="2"/><circle cx="100" cy="44" r="2"/>
+            <circle cx="10" cy="56" r="2"/><circle cx="20" cy="56" r="2"/><circle cx="30" cy="56" r="2"/><circle cx="40" cy="56" r="2"/><circle cx="50" cy="56" r="2"/>
+          </g>
+          <text x="110" y="80" fill="#888" font-size="9" text-anchor="middle" font-family="monospace">BREADBOARD</text>
+        </g>
+
+        <!-- ── RESISTORS ── -->
+        <!-- R1 -->
+        <g transform="translate(460,370)">
+          <line x1="-6" y1="5" x2="0" y2="5" stroke="#888" stroke-width="1.5"/>
+          <rect x="0" y="0" width="28" height="10" rx="3" fill="#d4a843" stroke="#b8900a" stroke-width="1"/>
+          <rect x="4"  y="0" width="3" height="10" fill="#8b0000" opacity="0.9"/>
+          <rect x="9"  y="0" width="3" height="10" fill="#333"    opacity="0.9"/>
+          <rect x="14" y="0" width="3" height="10" fill="#ffd700" opacity="0.9"/>
+          <line x1="28" y1="5" x2="34" y2="5" stroke="#888" stroke-width="1.5"/>
+          <text x="14" y="22" fill="#888" font-size="8" text-anchor="middle" font-family="monospace">220Ω</text>
+        </g>
+        <!-- R2 -->
+        <g transform="translate(510,370)">
+          <line x1="-6" y1="5" x2="0" y2="5" stroke="#888" stroke-width="1.5"/>
+          <rect x="0" y="0" width="28" height="10" rx="3" fill="#d4a843" stroke="#b8900a" stroke-width="1"/>
+          <rect x="4"  y="0" width="3" height="10" fill="#8b0000" opacity="0.9"/>
+          <rect x="9"  y="0" width="3" height="10" fill="#333"    opacity="0.9"/>
+          <rect x="14" y="0" width="3" height="10" fill="#ffd700" opacity="0.9"/>
+          <line x1="28" y1="5" x2="34" y2="5" stroke="#888" stroke-width="1.5"/>
+          <text x="14" y="22" fill="#888" font-size="8" text-anchor="middle" font-family="monospace">220Ω</text>
+        </g>
+        <!-- R3 -->
+        <g transform="translate(560,370)">
+          <line x1="-6" y1="5" x2="0" y2="5" stroke="#888" stroke-width="1.5"/>
+          <rect x="0" y="0" width="28" height="10" rx="3" fill="#d4a843" stroke="#b8900a" stroke-width="1"/>
+          <rect x="4"  y="0" width="3" height="10" fill="#8b0000" opacity="0.9"/>
+          <rect x="9"  y="0" width="3" height="10" fill="#333"    opacity="0.9"/>
+          <rect x="14" y="0" width="3" height="10" fill="#ffd700" opacity="0.9"/>
+          <line x1="28" y1="5" x2="34" y2="5" stroke="#888" stroke-width="1.5"/>
+          <text x="14" y="22" fill="#888" font-size="8" text-anchor="middle" font-family="monospace">220Ω</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar" id="status-bar" style="background:rgba(255,215,0,.07);border:1px solid #ffd70033">
+      <div class="status-icon" id="status-icon">☀️</div>
+      <div>
+        <div class="status-title" id="status-title" style="color:var(--solar)">DAYTIME: BATTERY CHARGING — LEDs OFF</div>
+        <div class="status-desc" id="status-desc">LDR reading 320Ω &lt; threshold 700Ω → Arduino deactivates pins 5,6,7</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BATTERY CHART + LDR GAUGE ══ -->
+  <div class="charts-row">
+    <div class="glass chart-panel">
+      <h3>◈ BATTERY LEVEL MONITOR</h3>
+      <div id="bat-bars"></div>
+      <div class="bat-ends">
+        <span>0%</span>
+        <span id="bat-pct-label" style="color:var(--accent2);font-weight:700">78% CHARGED</span>
+        <span>100%</span>
+      </div>
+      <div class="bat-status" id="bat-status-text">⚡ Charging via solar panel</div>
+    </div>
+    <div class="glass ldr-panel">
+      <h3>◈ LDR SENSOR</h3>
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#1a2a3a" stroke-width="10"/>
+          <circle id="ldr-arc" cx="60" cy="60" r="48" fill="none" stroke="#c084fc"
+            stroke-width="10" stroke-dasharray="94 301" stroke-linecap="round"
+            transform="rotate(-90 60 60)" style="filter:drop-shadow(0 0 6px #c084fc)"/>
+          <text id="ldr-gauge-val" x="60" y="56" text-anchor="middle" fill="#c084fc" font-size="14" font-weight="bold" font-family="monospace">320</text>
+          <text x="60" y="68" text-anchor="middle" fill="#4a7a9b" font-size="9" font-family="monospace">OHMS</text>
+        </svg>
+      </div>
+      <div class="ldr-status-text">
+        <div class="ldr-mode" id="ldr-mode" style="color:var(--solar)">LOW RESISTANCE</div>
+        <div class="ldr-hint" id="ldr-hint">Bright → LEDs Inhibited</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SECTIONS ══ -->
+  <div class="glass sections-panel">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="intro">⚡ Introduction</button>
+      <button class="tab-btn" data-tab="components">🔧 Components</button>
+      <button class="tab-btn" data-tab="working">⚙️ Working</button>
+      <button class="tab-btn" data-tab="advantages">✅ Advantages</button>
+      <button class="tab-btn" data-tab="future">🚀 Future Scope</button>
+    </div>
+
+    <!-- Intro -->
+    <div class="tab-content active" id="tab-intro">
+      <div class="section-title">⚡ INTRODUCTION</div>
+      <p class="section-text">The Solar Powered Automatic Street Lighting System leverages renewable solar energy combined with intelligent LDR-based sensing to autonomously control street LEDs. Built on an Arduino Uno R3, this system eliminates manual intervention — lights turn ON at dusk and OFF at dawn automatically, reducing energy waste and operational costs. The system continuously monitors ambient light levels and responds in real-time, making it ideal for smart city infrastructure and rural off-grid deployments.</p>
+    </div>
+
+    <!-- Components -->
+    <div class="tab-content" id="tab-components">
+      <div class="section-title">🔧 COMPONENTS USED</div>
+      <div class="comp-grid">
+        <div class="comp-card" style="border:1px solid #00979d33"><div class="comp-name" style="color:#00979d">Arduino Uno R3</div><div class="comp-spec">ATmega328P, 5V, 16MHz</div></div>
+        <div class="comp-card" style="border:1px solid #ffd70033"><div class="comp-name" style="color:#ffd700">Solar Panel</div><div class="comp-spec">6V / 1W Polycrystalline</div></div>
+        <div class="comp-card" style="border:1px solid #7ec8e333"><div class="comp-name" style="color:#7ec8e3">12V Battery</div><div class="comp-spec">Li-Ion 2200mAh</div></div>
+        <div class="comp-card" style="border:1px solid #c084fc33"><div class="comp-name" style="color:#c084fc">LDR Sensor</div><div class="comp-spec">GL5528, 10Ω–1MΩ</div></div>
+        <div class="comp-card" style="border:1px solid #00ff8833"><div class="comp-name" style="color:#00ff88">LEDs (×3)</div><div class="comp-spec">5mm Green, 20mA, 2.2V</div></div>
+        <div class="comp-card" style="border:1px solid #d4a84333"><div class="comp-name" style="color:#d4a843">Resistors (×3)</div><div class="comp-spec">220Ω, ¼W Carbon Film</div></div>
+        <div class="comp-card" style="border:1px solid #f5f0e833"><div class="comp-name" style="color:#ccc">Breadboard</div><div class="comp-spec">830-tie Full Size</div></div>
+        <div class="comp-card" style="border:1px solid #f9731633"><div class="comp-name" style="color:#f97316">Jumper Wires</div><div class="comp-spec">M-M / M-F 20cm</div></div>
+      </div>
+    </div>
+
+    <!-- Working -->
+    <div class="tab-content" id="tab-working">
+      <div class="section-title">⚙️ WORKING PRINCIPLE</div>
+      <div class="steps-grid">
+        <div class="step-card"><div class="step-icon">☀️</div><div class="step-title">DAYTIME</div><div class="step-desc">Solar panel generates power → charges battery. LDR resistance drops (bright light) → Arduino reads low analog value on A0 → Pins 5,6,7 set LOW → LEDs OFF.</div></div>
+        <div class="step-card"><div class="step-icon">🌙</div><div class="step-title">NIGHTTIME</div><div class="step-desc">LDR resistance rises (darkness) → Arduino reads high analog value on A0 → Threshold check passes → Pins 5,6,7 set HIGH → LEDs glow brightly.</div></div>
+        <div class="step-card"><div class="step-icon">🔋</div><div class="step-title">ENERGY STORAGE</div><div class="step-desc">Battery stores surplus solar energy during daylight and powers Arduino + LEDs throughout the night cycle continuously.</div></div>
+        <div class="step-card"><div class="step-icon">🔄</div><div class="step-title">AUTONOMY</div><div class="step-desc">The closed-loop feedback ensures fully automatic, maintenance-free operation 24/7 without any human input whatsoever.</div></div>
+      </div>
+    </div>
+
+    <!-- Advantages -->
+    <div class="tab-content" id="tab-advantages">
+      <div class="section-title">✅ ADVANTAGES</div>
+      <div class="points-grid">
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Zero electricity bill — 100% solar powered</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Automatic operation via LDR — no manual switching</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Eco-friendly and reduces carbon footprint significantly</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Low maintenance with long LED lifespan (50,000 hours)</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Scalable for urban and rural deployments</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Battery backup ensures reliable night operation</span></div>
+      </div>
+    </div>
+
+    <!-- Future -->
+    <div class="tab-content" id="tab-future">
+      <div class="section-title">🚀 FUTURE SCOPE</div>
+      <div class="points-grid">
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">IoT integration for remote monitoring via MQTT/WiFi</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Motion sensor dimming — 10% at no-motion, 100% on detection</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">AI-based predictive battery management system</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">LoRaWAN mesh network for smart city deployment</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Fault detection alerts via GSM / 4G modules</span></div>
+        <div class="point-item"><span class="point-arrow">▶</span><span class="point-text">Solar tracking servos for maximum panel efficiency</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ WIRING TABLE ══ -->
+  <div class="glass table-panel">
+    <h2>◈ PIN CONNECTION TABLE</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Arduino Pin</th><th>Wire Color</th><th>Function</th></tr>
+        </thead>
+        <tbody>
+          <tr><td style="color:#c084fc;font-weight:600">LDR Sensor</td><td style="color:var(--accent);font-family:monospace">A0</td><td><span class="wire-badge" style="background:#c084fc18;border:1px solid #c084fc44;color:#c084fc">Purple</span></td><td style="color:#6a9ab0">Light level input</td></tr>
+          <tr><td style="color:#00ff88;font-weight:600">LED 1</td><td style="color:var(--accent);font-family:monospace">D5 (PWM)</td><td><span class="wire-badge" style="background:#00ff8818;border:1px solid #00ff8844;color:#00ff88">Green</span></td><td style="color:#6a9ab0">Street light output</td></tr>
+          <tr><td style="color:#00ff88;font-weight:600">LED 2</td><td style="color:var(--accent);font-family:monospace">D6 (PWM)</td><td><span class="wire-badge" style="background:#00ff8818;border:1px solid #00ff8844;color:#00ff88">Green</span></td><td style="color:#6a9ab0">Street light output</td></tr>
+          <tr><td style="color:#00ff88;font-weight:600">LED 3</td><td style="color:var(--accent);font-family:monospace">D7</td><td><span class="wire-badge" style="background:#00ff8818;border:1px solid #00ff8844;color:#00ff88">Green</span></td><td style="color:#6a9ab0">Street light output</td></tr>
+          <tr><td style="color:#ff4444;font-weight:600">Battery (+)</td><td style="color:var(--accent);font-family:monospace">VIN / 5V</td><td><span class="wire-badge" style="background:#ff444418;border:1px solid #ff444444;color:#ff4444">Red</span></td><td style="color:#6a9ab0">Power supply</td></tr>
+          <tr><td style="color:#888;font-weight:600">All GND</td><td style="color:var(--accent);font-family:monospace">GND</td><td><span class="wire-badge" style="background:#88888818;border:1px solid #88888844;color:#888">Black</span></td><td style="color:#6a9ab0">Common ground</td></tr>
+          <tr><td style="color:#ffd700;font-weight:600">Solar Panel</td><td style="color:var(--accent);font-family:monospace">Battery</td><td><span class="wire-badge" style="background:#ffd70018;border:1px solid #ffd70044;color:#ffd700">Yellow</span></td><td style="color:#6a9ab0">Charging circuit</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>SOLAR STREET LIGHT SYSTEM · ARDUINO UNO R3 · BUILT WITH ⚡ HTML + CSS + VANILLA JS</footer>
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────────────
+let isNight = false;
+let batteryLevel = 78;
+let ldrValue = 320;
+let lightIntensity = 75;
+let particles = [];
+let particleId = 0;
+let animFrame;
+
+// ── Particle system ────────────────────────────────────────────
+const WIRE_SEGS = [
+  [[120,80],[120,160],[210,160]],
+  [[280,160],[380,160],[380,210]],
+  [[380,260],[380,320],[510,320]],
+];
+const WIRE_COLS_DAY   = ['#ffd700','#7ec8e3','#1a2a1a'];
+const WIRE_COLS_NIGHT = ['#ffd700','#7ec8e3','#00ff88'];
+
+function interpPath(pathIdx, t) {
+  const segs = WIRE_SEGS[pathIdx];
+  const total = segs.length - 1;
+  const seg = Math.min(Math.floor(t * total), total - 1);
+  const lt = (t * total) - seg;
+  const a = segs[seg], b = segs[seg+1];
+  return [a[0]+(b[0]-a[0])*lt, a[1]+(b[1]-a[1])*lt];
+}
+
+const particleLayer = document.getElementById('particle-layer');
+let counter = 0;
+
+function tickParticles() {
+  counter++;
+  if (counter % 5 === 0) {
+    const path = Math.floor(Math.random()*3);
+    if (path === 2 && !isNight) { /* skip LED wire in day */ }
+    else particles.push({id:particleId++, path, t:0});
+  }
+  particles = particles.map(p=>({...p, t:p.t+0.013})).filter(p=>p.t<1);
+  if (particles.length > 20) particles = particles.slice(-20);
+
+  // render
+  particleLayer.innerHTML = '';
+  const cols = isNight ? WIRE_COLS_NIGHT : WIRE_COLS_DAY;
+  particles.forEach(p=>{
+    const [x,y] = interpPath(p.path, p.t);
+    const col = cols[p.path];
+    const op = (1 - p.t*0.6).toFixed(2);
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx', x.toFixed(1));
+    c.setAttribute('cy', y.toFixed(1));
+    c.setAttribute('r', '4');
+    c.setAttribute('fill', col);
+    c.setAttribute('opacity', op);
+    c.setAttribute('filter','url(#glow)');
+    particleLayer.appendChild(c);
+  });
+
+  animFrame = requestAnimationFrame(tickParticles);
+}
+tickParticles();
+
+// ── Canvas particles background ────────────────────────────────
+const canvas = document.getElementById('particles-bg');
+const ctx = canvas.getContext('2d');
+let bgParticles = [];
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+for(let i=0;i<35;i++) bgParticles.push({
+  x: Math.random()*window.innerWidth,
+  y: Math.random()*window.innerHeight,
+  vy: -0.3-Math.random()*0.6,
+  r: 1+Math.random()*2.5,
+  op: 0.2+Math.random()*0.6,
+  phase: Math.random()*Math.PI*2,
+  speed: 0.008+Math.random()*0.015,
+});
+
+function drawBgParticles() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const t = Date.now()/1000;
+  bgParticles.forEach((p,i)=>{
+    const pulsed = p.op * (0.5+0.5*Math.sin(t*p.speed*60+p.phase));
+    const col = isNight
+      ? [['#00e5ff','#c084fc','#00ff88'][i%3]]
+      : [['#ffd700','#ff8c00','#ffffff'][i%3]];
+    ctx.beginPath();
+    ctx.arc(p.x, p.y + Math.sin(t*p.speed*30+p.phase)*20, p.r, 0, Math.PI*2);
+    ctx.fillStyle = col[0];
+    ctx.globalAlpha = pulsed;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+  requestAnimationFrame(drawBgParticles);
+}
+drawBgParticles();
+
+// ── Battery bars ───────────────────────────────────────────────
+const batBarsEl = document.getElementById('bat-bars');
+for(let i=0;i<20;i++){
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.id = `bar${i}`;
+  batBarsEl.appendChild(bar);
+}
+
+function updateBatBars() {
+  for(let i=0;i<20;i++){
+    const bar = document.getElementById(`bar${i}`);
+    const threshold = (i/20)*100;
+    const filled = batteryLevel > threshold;
+    const col = batteryLevel>60?'#39ff14':batteryLevel>30?'#ffd700':'#ff4444';
+    bar.style.height = filled ? `${30+Math.sin(i*0.5)*8}px` : '4px';
+    bar.style.background = filled ? col : '#1a2a1a';
+    bar.style.opacity = filled ? '1' : '0.15';
+  }
+}
+updateBatBars();
+
+// ── Main update ────────────────────────────────────────────────
+function applyMode() {
+  const cols = isNight ? WIRE_COLS_NIGHT : WIRE_COLS_DAY;
+  const wire2 = document.getElementById('wire2');
+  wire2.setAttribute('stroke', cols[2]);
+
+  // Sky orb
+  const orb = document.getElementById('sky-orb');
+  if(isNight){
+    orb.setAttribute('fill','url(#moonGrad)');
+    orb.setAttribute('rx','40'); orb.setAttribute('ry','40');
+    orb.setAttribute('opacity','0.5');
+  } else {
+    orb.setAttribute('fill','url(#sunGrad)');
+    orb.setAttribute('rx','55'); orb.setAttribute('ry','55');
+    orb.setAttribute('opacity','0.6');
+  }
+
+  // Solar flash
+  document.getElementById('solar-flash').style.display = isNight ? 'none':'block';
+  document.getElementById('solar-status-svg').textContent = isNight ? 'LOW LIGHT' : 'CHARGING ⚡';
+  document.getElementById('solar-status-svg').setAttribute('fill', isNight?'#555':'#ffd700');
+  document.getElementById('solar-border').setAttribute('stroke-width', isNight?'0.5':'1.5');
+
+  // Photon arrows
+  document.getElementById('photon-arrows').style.display = isNight?'none':'block';
+
+  // LDR fill colour
+  document.getElementById('ldr-fill').setAttribute('fill', isNight?'rgba(192,132,252,0.25)':'rgba(255,215,0,0.4)');
+
+  // Arduino onboard LEDs
+  document.getElementById('ard-led-red').setAttribute('fill', isNight?'#ff4444':'#330000');
+  document.getElementById('ard-led-green').setAttribute('fill', isNight?'#39ff14':'#003300');
+  if(isNight){
+    document.getElementById('ard-led-green').setAttribute('filter','url(#glow)');
+  } else {
+    document.getElementById('ard-led-green').removeAttribute('filter');
+  }
+
+  // LEDs in SVG
+  ['1','2','3'].forEach(n=>{
+    const body = document.getElementById(`led${n}-body`);
+    const glow = document.getElementById(`led${n}-glow`);
+    const label = document.getElementById(`led${n}-label`);
+    if(isNight){
+      body.setAttribute('fill','#00ff88');
+      body.setAttribute('stroke','#88ffcc');
+      body.setAttribute('filter','url(#ledglow)');
+      glow.setAttribute('fill','rgba(0,255,136,0.18)');
+      glow.setAttribute('filter','url(#ledglow)');
+      label.setAttribute('fill','#00ff88');
+    } else {
+      body.setAttribute('fill','#1a2a1a');
+      body.setAttribute('stroke','#2a3a2a');
+      body.removeAttribute('filter');
+      glow.setAttribute('fill','rgba(0,255,136,0)');
+      glow.removeAttribute('filter');
+      label.setAttribute('fill','#444');
+    }
+  });
+
+  // Ambient circuit overlay
+  const ambient = document.getElementById('circuit-ambient');
+  ambient.style.background = isNight
+    ? 'radial-gradient(ellipse at 15% 30%,rgba(192,132,252,0.05),transparent 50%)'
+    : 'radial-gradient(ellipse at 15% 20%,rgba(255,215,0,0.07),transparent 50%)';
+
+  // Status bar
+  const sb = document.getElementById('status-bar');
+  const stitle = document.getElementById('status-title');
+  const sdesc = document.getElementById('status-desc');
+  const sicon = document.getElementById('status-icon');
+  if(isNight){
+    sb.style.background='rgba(0,255,136,.07)';
+    sb.style.border='1px solid #00ff8833';
+    stitle.style.color='#00ff88';
+    stitle.textContent='NIGHTTIME: LEDs ON AUTOMATICALLY';
+    sicon.textContent='🌙';
+    sdesc.textContent=`LDR reading ${Math.round(ldrValue)}Ω > threshold 700Ω → Arduino activates pins 5,6,7`;
+  } else {
+    sb.style.background='rgba(255,215,0,.07)';
+    sb.style.border='1px solid #ffd70033';
+    stitle.style.color='#ffd700';
+    stitle.textContent='DAYTIME: BATTERY CHARGING — LEDs OFF';
+    sicon.textContent='☀️';
+    sdesc.textContent=`LDR reading ${Math.round(ldrValue)}Ω < threshold 700Ω → Arduino deactivates pins 5,6,7`;
+  }
+
+  // LED dots (sidebar)
+  ['5','6','7'].forEach(p=>{
+    const dot = document.getElementById(`led${p}`);
+    const pin = document.getElementById(`pin${p}`);
+    const ma = document.getElementById(`ma${p}`);
+    if(isNight){
+      dot.classList.add('on');
+      pin.style.color='#00ff88';
+      ma.textContent='20mA';
+    } else {
+      dot.classList.remove('on');
+      pin.style.color='#2a4a2a';
+      ma.textContent='0mA';
+    }
+  });
+  document.getElementById('total-draw').style.color = isNight?'#00ff88':'#2a4a2a';
+  document.getElementById('total-draw').textContent = isNight?'60mA':'0mA';
+
+  // Stats cards
+  document.getElementById('solar-val').textContent = isNight?'0.2W':'5.8W';
+  document.getElementById('led-status-val').textContent = isNight?'ACTIVE':'STANDBY';
+  document.getElementById('led-status-val').style.color = isNight?'#00ff88':'#2a4a2a';
+  document.getElementById('eff-val').textContent = isNight?'94%':'99%';
+
+  // Badge mode
+  const bm = document.getElementById('badge-mode');
+  if(isNight){
+    bm.style.background='rgba(192,132,252,.12)';bm.style.borderColor='#c084fc44';bm.style.color='#c084fc';
+    bm.textContent='🌙 NIGHT MODE';
+  } else {
+    bm.style.background='rgba(255,215,0,.12)';bm.style.borderColor='#ffd70044';bm.style.color='#ffd700';
+    bm.textContent='☀️ DAY MODE';
+  }
+
+  // Toggle button
+  const tb = document.getElementById('toggle-btn');
+  if(isNight){
+    tb.className='day-btn'; tb.textContent='☀️ SWITCH TO DAY';
+  } else {
+    tb.className='night-btn'; tb.textContent='🌙 SWITCH TO NIGHT';
+  }
+
+  // Ambient bg
+  document.getElementById('ambient-bg').style.background = isNight
+    ? 'radial-gradient(ellipse at 20% 20%,#0a0a2a 0%,#050a14 60%)'
+    : 'radial-gradient(ellipse at 80% 10%,#1a1000 0%,#050a14 60%)';
+
+  // LDR status
+  document.getElementById('ldr-mode').style.color = isNight?'#c084fc':'#ffd700';
+  document.getElementById('ldr-mode').textContent = isNight?'HIGH RESISTANCE':'LOW RESISTANCE';
+  document.getElementById('ldr-hint').textContent = isNight?'Dark → LEDs Triggered':'Bright → LEDs Inhibited';
+
+  // Battery status
+  document.getElementById('bat-status-text').textContent = isNight?'🔋 Discharging — powering LEDs':'⚡ Charging via solar panel';
+}
+
+function updateLiveValues() {
+  // Drift ldr & battery
+  if(!isNight){
+    ldrValue = Math.max(200, Math.min(500, ldrValue + (Math.random()-.3)*25));
+    batteryLevel = Math.min(100, batteryLevel + 0.25);
+  } else {
+    ldrValue = Math.max(750, Math.min(1023, ldrValue + (Math.random()-.3)*18));
+    batteryLevel = Math.max(8, batteryLevel - 0.12);
+  }
+
+  // Badge & gauge
+  document.getElementById('badge-ldr').textContent = `LDR: ${Math.round(ldrValue)}Ω`;
+  const pct = Math.round(batteryLevel);
+  document.getElementById('badge-bat').textContent = `BAT: ${pct}%`;
+
+  // SVG battery fill
+  const fillWidth = 70*(batteryLevel/100);
+  document.getElementById('bat-fill-svg').setAttribute('width', fillWidth.toFixed(1));
+  const bc = batteryLevel>50?'#39ff14':batteryLevel>25?'#ffd700':'#ff4444';
+  document.getElementById('bat-fill-svg').setAttribute('fill', bc);
+  document.getElementById('bat-pct-svg').textContent = pct+'%';
+
+  // Battery bars
+  updateBatBars();
+  const bpLabel = document.getElementById('bat-pct-label');
+  bpLabel.textContent = `${pct}% CHARGED`;
+  bpLabel.style.color = bc;
+
+  // LDR gauge arc
+  const dashLen = (ldrValue/1023)*301;
+  document.getElementById('ldr-arc').setAttribute('stroke-dasharray', `${dashLen.toFixed(1)} 301`);
+  document.getElementById('ldr-gauge-val').textContent = Math.round(ldrValue);
+  document.getElementById('ldr-svg-val').textContent = Math.round(ldrValue)+'Ω';
+
+  // Status desc live update
+  const sdesc = document.getElementById('status-desc');
+  if(isNight){
+    sdesc.textContent=`LDR reading ${Math.round(ldrValue)}Ω > threshold 700Ω → Arduino activates pins 5,6,7`;
+  } else {
+    sdesc.textContent=`LDR reading ${Math.round(ldrValue)}Ω < threshold 700Ω → Arduino deactivates pins 5,6,7`;
+  }
+}
+
+setInterval(updateLiveValues, 850);
+
+// ── Slider ────────────────────────────────────────────────────
+const slider = document.getElementById('intensity');
+const intensityVal = document.getElementById('intensity-val');
+
+function updateSliderStyle(val){
+  const col = val>=40?'#ffd700':'#c084fc';
+  slider.style.background=`linear-gradient(90deg,${col} ${val}%,#1a2a3a ${val}%)`;
+  slider.style.accentColor=col;
+  intensityVal.style.color=col;
+  intensityVal.textContent=`${val}% — ${val>=40?'BRIGHT':'DARK'}`;
+}
+updateSliderStyle(75);
+
+slider.addEventListener('input', e=>{
+  lightIntensity = Number(e.target.value);
+  const wasNight = isNight;
+  isNight = lightIntensity < 40;
+  updateSliderStyle(lightIntensity);
+  if(isNight !== wasNight) applyMode();
+});
+
+// ── Toggle button ─────────────────────────────────────────────
+document.getElementById('toggle-btn').addEventListener('click', ()=>{
+  isNight = !isNight;
+  lightIntensity = isNight ? 15 : 75;
+  slider.value = lightIntensity;
+  updateSliderStyle(lightIntensity);
+  applyMode();
+  if(isNight) {
+    ldrValue = 850;
+  } else {
+    ldrValue = 320;
+  }
+});
+
+// ── Tabs ──────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Initial render ─────────────────────────────────────────────
+applyMode();
+</script>
+</body>
+</html>
